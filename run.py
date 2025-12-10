@@ -38,8 +38,8 @@ def main():
     
     try:
         day = int(sys.argv[1])
-        if day < 1 or day > 25:
-            print("Le jour doit être entre 1 et 25")
+        if day < 1 or day > 12:
+            print("Le jour doit être entre 1 et 12")
             return
         run_day(day)
     except ValueError:
