@@ -94,7 +94,7 @@ def find_largest_rectangle(tiles):
 def find_largest_rectangle_part2(red_tiles, green_path, is_green):
     """
     Find the largest rectangle using only red and green tiles.
-    Check ALL border points (no sampling) to ensure correctness.
+    Check borders completely + sample interior strategically.
     """
     red_set = set(red_tiles)
     
@@ -132,10 +132,14 @@ def find_largest_rectangle_part2(red_tiles, green_path, is_green):
         min_x, max_x = min(x1, x2), max(x1, x2)
         min_y, max_y = min(y1, y2), max(y1, y2)
         
-        # Check ALL border points - no sampling!
+        width = max_x - min_x + 1
+        height = max_y - min_y + 1
+        
+        # Strategy: Check borders first (fast reject), then sample interior
         valid = True
         
-        # Check top and bottom edges (all points)
+        # Check ALL border points
+        # Top and bottom edges
         for x in range(min_x, max_x + 1):
             if (x, min_y) not in red_set and not is_green((x, min_y)):
                 valid = False
@@ -144,7 +148,7 @@ def find_largest_rectangle_part2(red_tiles, green_path, is_green):
                 valid = False
                 break
         
-        # Check left and right edges (excluding corners already checked)
+        # Left and right edges (excluding corners)
         if valid:
             for y in range(min_y + 1, max_y):
                 if (min_x, y) not in red_set and not is_green((min_x, y)):
@@ -153,6 +157,32 @@ def find_largest_rectangle_part2(red_tiles, green_path, is_green):
                 if (max_x, y) not in red_set and not is_green((max_x, y)):
                     valid = False
                     break
+        
+        # Check interior points with adaptive sampling
+        if valid:
+            # For small rectangles, check everything
+            if width * height <= 50000:
+                for x in range(min_x + 1, max_x):
+                    for y in range(min_y + 1, max_y):
+                        if (x, y) not in red_set and not is_green((x, y)):
+                            valid = False
+                            break
+                    if not valid:
+                        break
+            else:
+                # For large rectangles, sample interior points in a grid
+                # Use ~200 sample points
+                sample_size = min(200, width * height // 1000)
+                step_x = max(1, width // int(sample_size ** 0.5))
+                step_y = max(1, height // int(sample_size ** 0.5))
+                
+                for x in range(min_x + 1, max_x, step_x):
+                    for y in range(min_y + 1, max_y, step_y):
+                        if (x, y) not in red_set and not is_green((x, y)):
+                            valid = False
+                            break
+                    if not valid:
+                        break
         
         if valid:
             max_area = area

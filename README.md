@@ -6,11 +6,16 @@ Solutions pour les défis Advent of Code 2025.
 
 | Jour | Partie 1 | Partie 2 | Description |
 |------|----------|----------|-------------|
-| [Jour 1](day1.py) | ⭐ 1145 | ⭐ 6561 | Secret Entrance - Rotation de cadran |
-| [Jour 2](day2.py) | ⭐ 26255179562 | ⭐ 31680313976 | Gift Shop - IDs de produits invalides |
-| [Jour 3](puzzle.py) | ⭐ | ⭐ | Résultat dans aoc_day3_result.txt |
-| [Jour 4](day4.py) | ⭐ 1518 | ⭐ 8665 | Printing Department - Rouleaux de papier accessibles |
-| [Jour 5](day5.py) | ⭐ 679 | ⭐ 358155203664116 | Cafeteria - Gestion d'inventaire d'ingrédients |
+| [Jour 1](day01/) | ⭐ 1145 | ⭐ 6561 | Secret Entrance - Rotation de cadran |
+| [Jour 2](day02/) | ⭐ 26255179562 | ⭐ 31680313976 | Gift Shop - IDs de produits invalides |
+| [Jour 3](day03/) | ⭐ | ⭐ | Résultat dans result.txt |
+| [Jour 4](day04/) | ⭐ 1518 | ⭐ 8665 | Printing Department - Rouleaux de papier accessibles |
+| [Jour 5](day05/) | ⭐ 679 | ⭐ 358155203664116 | Cafeteria - Gestion d'inventaire d'ingrédients |
+| [Jour 6](day06/) | ⭐ | ⭐ | |
+| [Jour 7](day07/) | ⭐ | ⭐ | |
+| [Jour 8](day08/) | ⭐ | ⭐ | |
+| [Jour 9](day09/) | ⭐ | ⭐ | |
+| [Jour 10](day10/) | ⭐ | ⭐ | |
 
 **Total: 10 étoiles ⭐**
 
@@ -43,20 +48,41 @@ Système de gestion d'inventaire pour identifier les ingrédients frais.
 
 ```bash
 # Exécuter une solution spécifique
-python3 day1.py
-python3 day2.py
-python3 day4.py
-python3 day5.py
+python run.py 1
+python run.py 2
+python run.py 4
+python run.py 5
+
+# Ou directement dans le dossier du jour
+cd day01 && python solution.py
+cd day02 && python solution.py
 ```
 
 ## 📁 Structure des fichiers
 
-- `dayX.py` - Solution pour le jour X
-- `input.txt` - Input principal (utilisé par day4)
-- `input_day1.txt` - Input pour le jour 1
-- `input_day2.txt` - Input pour le jour 2
-- `input_day5.txt` - Input pour le jour 5
-- `aoc_day3_result.txt` - Résultat du jour 3
+```
+adventofcode/
+├── run.py              # Script de lancement global
+├── README.md           # Ce fichier
+├── requirements.txt    # Dépendances Python
+├── utils/              # Utilitaires communs
+│   └── main.py
+├── day01/              # Jour 1
+│   ├── solution.py     # Solution du jour
+│   └── input.txt       # Input du jour
+├── day02/              # Jour 2
+│   ├── solution.py
+│   └── input.txt
+├── day03/              # Jour 3
+│   ├── solution.py
+│   ├── result.txt      # Résultat stocké
+│   ├── lobby.py        # Fichiers additionnels
+│   └── lob.py
+└── dayXX/              # Structure pour chaque jour
+    ├── solution.py     # Solution principale
+    ├── input.txt       # Input du défi
+    └── *.py            # Fichiers additionnels si nécessaire
+```
 
 ## 🛠️ Technologies
 
