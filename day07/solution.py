@@ -1,138 +1,168 @@
-def parse_manifold(filename):
-    """Parse the manifold diagram and return the grid."""
-    with open(filename, 'r') as f:
-        grid = [line.rstrip('\n') for line in f.readlines()]
-    return grid
+from typing import List, Tuple, Dict, Set
+from dataclasses import dataclass
+import sys
+from collections import defaultdict
 
+@dataclass(frozen=True)
+class Position:
+    """Représente une position dans la grille."""
+    row: int
+    col: int
 
-def find_start(grid):
-    """Find the starting position S."""
-    for row_idx, row in enumerate(grid):
-        for col_idx, char in enumerate(row):
-            if char == 'S':
-                return (row_idx, col_idx)
-    return None
-
-
-def simulate_beam(grid, start_row, start_col):
-    """
-    Simulate tachyon beam propagation.
-    Returns the total number of splits.
-    """
-    rows = len(grid)
-    cols = len(grid[0]) if rows > 0 else 0
+class TachyonSimulator:
+    """Simulateur de propagation de tachyon dans une variété quantique."""
     
-    # Track active beams: list of (row, col) positions
-    beams = [(start_row + 1, start_col)]  # Start one row below S
-    split_count = 0
-    
-    # Track which positions have been processed to avoid infinite loops
-    processed = set()
-    
-    while beams:
-        new_beams = []
+    def __init__(self, grid: List[str]):
+        """Initialise le simulateur avec une grille donnée."""
+        self.grid = grid
+        self.rows = len(grid)
+        self.cols = len(grid[0]) if self.rows > 0 else 0
+        self.start_pos = self._find_start()
         
-        for row, col in beams:
-            # Skip if out of bounds
-            if row < 0 or row >= rows or col < 0 or col >= cols:
-                continue
+    def _find_start(self) -> Position:
+        """Trouve la position de départ 'S' dans la grille.
+        
+        Returns:
+            Position: La position (ligne, colonne) de 'S'
             
-            # Skip if already processed this position
-            if (row, col) in processed:
-                continue
+        Raises:
+            ValueError: Si 'S' n'est pas trouvé dans la grille
+        """
+        for row_idx, row in enumerate(self.grid):
+            if 'S' in row:
+                return Position(row_idx, row.index('S'))
+        raise ValueError("Position de départ 'S' non trouvée dans la grille")
+    
+    def is_valid_position(self, pos: Position) -> bool:
+        """Vérifie si une position est valide dans la grille."""
+        return (0 <= pos.row < self.rows and 
+                0 <= pos.col < self.cols)
+    
+    def count_beam_splits(self) -> int:
+        """Compte le nombre total de divisions de faisceau (Partie 1).
+        
+        Returns:
+            int: Nombre total de divisions de faisceau
+        """
+        if not self.start_pos:
+            return 0
             
-            processed.add((row, col))
+        beams = [Position(self.start_pos.row + 1, self.start_pos.col)]
+        processed = set()
+        split_count = 0
+        
+        while beams:
+            new_beams = []
             
-            # Check current position
-            char = grid[row][col]
-            
-            if char == '^':
-                # Hit a splitter - split into left and right
-                split_count += 1
+            for pos in beams:
+                if not self.is_valid_position(pos) or pos in processed:
+                    continue
+                    
+                processed.add(pos)
+                char = self.grid[pos.row][pos.col]
                 
-                # Add beams going down from left and right
-                if col - 1 >= 0:
-                    new_beams.append((row + 1, col - 1))
-                if col + 1 < cols:
-                    new_beams.append((row + 1, col + 1))
-            else:
-                # Empty space - continue downward
-                new_beams.append((row + 1, col))
+                if char == '^':
+                    # Division du faisceau
+                    split_count += 1
+                    left = Position(pos.row + 1, pos.col - 1)
+                    right = Position(pos.row + 1, pos.col + 1)
+                    
+                    if self.is_valid_position(left):
+                        new_beams.append(left)
+                    if self.is_valid_position(right):
+                        new_beams.append(right)
+                else:
+                    # Déplacement vers le bas
+                    new_beams.append(Position(pos.row + 1, pos.col))
+            
+            beams = new_beams
         
-        beams = new_beams
+        return split_count
     
-    return split_count
-
-
-def count_timelines(grid, start_row, start_col):
-    """
-    Count unique timelines in quantum tachyon splitting.
-    Track the number of different paths (timelines) that reach each position.
-    """
-    rows = len(grid)
-    cols = len(grid[0]) if rows > 0 else 0
-    
-    # Use dynamic programming: count paths to each position
-    # paths[(row, col)] = number of distinct timelines to reach this position
-    paths = {}
-    paths[(start_row + 1, start_col)] = 1
-    
-    # Process row by row from top to bottom
-    for current_row in range(start_row + 1, rows + 1):
-        new_paths = {}
+    def count_timelines(self) -> int:
+        """Compte le nombre total d'univers parallèles (Partie 2).
         
-        for (row, col), count in list(paths.items()):
-            if row != current_row:
-                continue
+        Returns:
+            int: Nombre total de chronologies uniques
+        """
+        if not self.start_pos:
+            return 0
             
-            # If we've exited the bottom, count this as a final timeline
-            if row >= rows:
-                new_paths[(row, col)] = new_paths.get((row, col), 0) + count
-                continue
-            
-            # Check if out of bounds horizontally - these also exit
-            if col < 0 or col >= cols:
-                new_paths[(row, col)] = new_paths.get((row, col), 0) + count
-                continue
-            
-            char = grid[row][col]
-            
-            if char == '^':
-                # Quantum split: particle takes both left and right paths
-                # Each path inherits the count of timelines
-                new_paths[(row + 1, col - 1)] = new_paths.get((row + 1, col - 1), 0) + count
-                new_paths[(row + 1, col + 1)] = new_paths.get((row + 1, col + 1), 0) + count
-            else:
-                # Empty space: continue downward
-                new_paths[(row + 1, col)] = new_paths.get((row + 1, col), 0) + count
+        # Dictionnaire des chemins: (row, col) -> nombre de chemins
+        paths = defaultdict(int)
+        start = Position(self.start_pos.row + 1, self.start_pos.col)
+        paths[start] = 1
         
-        paths = new_paths
-    
-    # Sum all timelines that exited (bottom, left, or right edges)
-    return sum(count for (row, col), count in paths.items() if row >= rows or col < 0 or col >= cols)
+        for current_row in range(self.start_pos.row + 1, self.rows + 1):
+            new_paths = defaultdict(int)
+            
+            for pos, count in paths.items():
+                if pos.row != current_row:
+                    continue
+                    
+                # Vérifie si on sort des limites
+                if not (0 <= pos.col < self.cols) or pos.row >= self.rows:
+                    new_paths[pos] += count
+                    continue
+                
+                char = self.grid[pos.row][pos.col]
+                
+                if char == '^':
+                    # Division quantique
+                    left = Position(pos.row + 1, pos.col - 1)
+                    right = Position(pos.row + 1, pos.col + 1)
+                    new_paths[left] += count
+                    new_paths[right] += count
+                else:
+                    # Déplacement vers le bas
+                    new_paths[Position(pos.row + 1, pos.col)] += count
+            
+            paths = new_paths
+        
+        # Compte tous les chemins qui sortent de la grille
+        return sum(
+            count 
+            for pos, count in paths.items() 
+            if pos.row >= self.rows or not (0 <= pos.col < self.cols)
+        )
 
-
-def main():
-    # Parse the manifold
-    grid = parse_manifold('input_day7.txt')
+def main() -> None:
+    """Fonction principale."""
+    if len(sys.argv) != 2:
+        print(f"Utilisation: {sys.argv[0]} <fichier_entrée>", file=sys.stderr)
+        sys.exit(1)
+        
+    filename = sys.argv[1]
     
-    # Find starting position
-    start = find_start(grid)
-    if not start:
-        print("Error: Could not find starting position S")
-        return
-    
-    start_row, start_col = start
-    print(f"Starting position: row {start_row}, col {start_col}")
-    
-    # Part 1: Simulate beam propagation
-    split_count = simulate_beam(grid, start_row, start_col)
-    print(f"\nPart 1 - Total number of beam splits: {split_count}")
-    
-    # Part 2: Count unique timelines
-    timeline_count = count_timelines(grid, start_row, start_col)
-    print(f"Part 2 - Total number of unique timelines: {timeline_count}")
-
+    try:
+        # Lecture du fichier d'entrée
+        with open(filename, 'r') as f:
+            grid = [line.strip() for line in f if line.strip()]
+            
+        if not grid:
+            print("Erreur: La grille est vide.", file=sys.stderr)
+            sys.exit(1)
+            
+        # Création du simulateur
+        simulator = TachyonSimulator(grid)
+        
+        # Partie 1: Nombre de divisions de faisceau
+        split_count = simulator.count_beam_splits()
+        print(f"Partie 1 - Nombre de divisions de faisceau: {split_count}")
+        
+        # Partie 2: Nombre total de chronologies uniques
+        timeline_count = simulator.count_timelines()
+        print(f"Partie 2 - Nombre total de chronologies: {timeline_count}")
+        
+    except FileNotFoundError:
+        print(f"Erreur: Le fichier {filename} est introuvable.", file=sys.stderr)
+        sys.exit(1)
+    except ValueError as e:
+        print(f"Erreur: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Erreur inattendue: {e}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

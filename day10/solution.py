@@ -1,298 +1,189 @@
+"""
+Advent of Code 2025 - Jour 10 : Machines à Cadeaux
+Solution optimisée avec typage statique et documentation complète
+"""
+
 import re
+from typing import List, Tuple, Optional, Dict, Set
+from pulp import LpProblem, LpVariable, LpMinimize, lpSum, LpInteger, PULP_CBC_CMD
 
+# Types personnalisés
+ConfigurationLumineuse = List[int]  # 0 pour éteint, 1 pour allumé
+Bouton = List[int]  # Liste des indices des lumières contrôlées
+Joltages = List[int]  # Exigences de joltage pour chaque compteur
 
-def parse_machine(line):
-    """Parse a machine specification line."""
-    # Extract indicator lights pattern
-    lights_match = re.search(r'\[([.#]+)\]', line)
-    lights = lights_match.group(1)
-    target = [1 if c == '#' else 0 for c in lights]
+def analyser_machine(ligne: str) -> Tuple[ConfigurationLumineuse, List[Bouton], Joltages]:
+    """Analyse une ligne de spécification de machine.
     
-    # Extract button configurations
-    buttons = []
-    button_matches = re.findall(r'\(([0-9,]+)\)', line)
-    for match in button_matches:
-        indices = [int(x) for x in match.split(',')]
-        buttons.append(indices)
-    
-    # Extract joltage requirements
-    joltage_match = re.search(r'\{([0-9,]+)\}', line)
-    joltages = [int(x) for x in joltage_match.group(1).split(',')]
-    
-    return target, buttons, joltages
-
-
-def solve_joltage(joltages, buttons):
+    Args:
+        ligne: Chaîne de caractères au format "[##...] (0,1) (2,3) {1,2,3}"
+        
+    Returns:
+        Un tuple contenant:
+        - La configuration lumineuse cible
+        - La liste des boutons et les lumières qu'ils contrôlent
+        - Les exigences de joltage
+        
+    Exemple:
+        >>> analyser_machine("[.##.] (0,1) (1,2) {1,2}")
+        ([0, 1, 1, 0], [[0, 1], [1, 2]], [1, 2])
     """
-    Solve using a simple approach: since each button adds 1 to certain counters,
-    we can solve this as a system of linear equations.
-    For many practical cases, we can solve it directly.
+    # Extraire le motif des lumières
+    motif_lumineux = re.search(r'\[([.#]+)\]', ligne)
+    cible = [1 if c == '#' else 0 for c in motif_lumineux.group(1)] if motif_lumineux else []
+
+    # Extraire les configurations des boutons
+    boutons = []
+    for match in re.finditer(r'\(([0-9,]+)\)', ligne):
+        indices = [int(x) for x in match.group(1).split(',')]
+        boutons.append(indices)
+
+    # Extraire les exigences de joltage
+    joltage_match = re.search(r'\{([0-9,]+)\}', ligne)
+    joltages = [int(x) for x in joltage_match.group(1).split(',')] if joltage_match else []
+
+    return cible, boutons, joltages
+
+def resoudre_lumieres_brute_force(
+    cible: ConfigurationLumineuse, 
+    boutons: List[Bouton]
+) -> Optional[int]:
+    """Résout la partie 1 en testant toutes les combinaisons possibles.
+    
+    Args:
+        cible: Configuration lumineuse souhaitée
+        boutons: Liste des boutons et des lumières qu'ils contrôlent
+        
+    Returns:
+        Le nombre minimum de pressions nécessaires, ou None si impossible
     """
-    n_counters = len(joltages)
-    n_buttons = len(buttons)
-    
-    # Build the matrix: A[counter][button] = 1 if button affects counter
-    A = [[0] * n_buttons for _ in range(n_counters)]
-    for button_idx, button in enumerate(buttons):
-        for counter_idx in button:
-            A[counter_idx][button_idx] = 1
-    
-    # Try Gaussian elimination
-    aug = [A[i][:] + [joltages[i]] for i in range(n_counters)]
-    
-    # Row reduction
-    pivot_row = 0
-    for col in range(n_buttons):
-        # Find pivot
-        found = False
-        for row in range(pivot_row, n_counters):
-            if aug[row][col] != 0:
-                aug[pivot_row], aug[row] = aug[row], aug[pivot_row]
-                found = True
-                break
-        
-        if not found:
-            continue
-        
-        # Eliminate
-        for row in range(n_counters):
-            if row != pivot_row and aug[row][col] != 0:
-                factor = aug[row][col] / aug[pivot_row][col]
-                for c in range(n_buttons + 1):
-                    aug[row][c] -= factor * aug[pivot_row][c]
-        
-        pivot_row += 1
-    
-    # Back substitution
-    x = [0.0] * n_buttons
-    for row in range(n_counters - 1, -1, -1):
-        # Find pivot column
-        pivot_col = None
-        for col in range(n_buttons):
-            if abs(aug[row][col]) > 1e-9:
-                pivot_col = col
-                break
-        
-        if pivot_col is None:
-            if abs(aug[row][-1]) > 1e-9:
-                return None  # Inconsistent
-            continue
-        
-        # Solve for x[pivot_col]
-        val = aug[row][-1]
-        for col in range(pivot_col + 1, n_buttons):
-            val -= aug[row][col] * x[col]
-        x[pivot_col] = val / aug[row][pivot_col]
-    
-    # Check if solution is valid (non-negative integers)
-    for i in range(n_buttons):
-        if x[i] < -1e-6 or abs(x[i] - round(x[i])) > 1e-6:
-            return None
-    
-    x = [int(round(v)) for v in x]
-    
-    # Verify
-    result = [0] * n_counters
-    for button_idx, count in enumerate(x):
-        for counter_idx in buttons[button_idx]:
-            result[counter_idx] += count
-    
-    if result == joltages:
-        return sum(x)
-    
-    return None
+    nb_lumieres = len(cible)
+    nb_boutons = len(boutons)
+    min_pressions = float('inf')
 
+    # Essayer toutes les combinaisons possibles de boutons
+    for masque in range(1 << nb_boutons):
+        etat = [0] * nb_lumieres
+        pressions = 0
+        
+        # Appliquer les boutons sélectionnés
+        for i_bouton in range(nb_boutons):
+            if masque & (1 << i_bouton):
+                pressions += 1
+                for lumiere in boutons[i_bouton]:
+                    if 0 <= lumiere < nb_lumieres:
+                        etat[lumiere] ^= 1
+        
+        # Vérifier si on a atteint la cible
+        if etat == cible:
+            min_pressions = min(min_pressions, pressions)
 
-def solve_joltage_bfs(joltages, buttons):
+    return int(min_pressions) if min_pressions != float('inf') else None
+
+def resoudre_joltage_ilp(
+    joltages: Joltages, 
+    boutons: List[Bouton], 
+    timeout: int = 30
+) -> Optional[int]:
+    """Résout la partie 2 en utilisant la programmation linéaire en nombres entiers.
+    
+    Args:
+        joltages: Exigences de joltage pour chaque compteur
+        boutons: Liste des boutons et des compteurs qu'ils affectent
+        timeout: Délai maximum en secondes pour la résolution
+        
+    Returns:
+        Le nombre minimum de pressions nécessaires, ou None si impossible
     """
-    Optimized BFS with better pruning and state management.
-    """
-    import heapq
-    
-    n_counters = len(joltages)
-    target = tuple(joltages)
-    initial = tuple([0] * n_counters)
-    
-    if initial == target:
-        return 0
-    
-    # Use Dijkstra with better heuristic
-    def heuristic(state):
-        # Minimum presses needed: max difference for any counter
-        max_diff = 0
-        for i in range(n_counters):
-            if state[i] < joltages[i]:
-                max_diff = max(max_diff, joltages[i] - state[i])
-        return max_diff
-    
-    # Priority queue: (f_score, g_score, state)
-    heap = [(heuristic(initial), 0, initial)]
-    g_score = {initial: 0}
-    
-    iterations = 0
-    max_iterations = 500000  # Safety limit
-    
-    while heap and iterations < max_iterations:
-        iterations += 1
-        f, g, state = heapq.heappop(heap)
-        
-        # Skip if we found better path
-        if state in g_score and g_score[state] < g:
-            continue
-        
-        # Found target
-        if state == target:
-            return g
-        
-        # Try each button
-        for button in buttons:
-            new_state = list(state)
-            valid = True
-            
-            for counter_idx in button:
-                new_state[counter_idx] += 1
-                if new_state[counter_idx] > joltages[counter_idx]:
-                    valid = False
-                    break
-            
-            if not valid:
-                continue
-            
-            new_state = tuple(new_state)
-            new_g = g + 1
-            
-            if new_state not in g_score or g_score[new_state] > new_g:
-                g_score[new_state] = new_g
-                new_f = new_g + heuristic(new_state)
-                heapq.heappush(heap, (new_f, new_g, new_state))
-    
-    return None
+    nb_boutons = len(boutons)
+    nb_compteurs = len(joltages)
 
+    # Créer le problème d'optimisation
+    probleme = LpProblem("Minimiser_Pressions", LpMinimize)
+    
+    # Variables de décision : nombre de fois qu'on appuie sur chaque bouton
+    pressions = [LpVariable(f"x{i}", lowBound=0, cat=LpInteger) 
+                for i in range(nb_boutons)]
 
-def solve_joltage_hybrid(joltages, buttons):
-    """
-    Hybrid approach: use BFS for all problems, with iteration limit as fallback.
-    """
-    # Always try BFS first (it's optimal when it works)
-    result = solve_joltage_bfs(joltages, buttons)
-    if result is not None:
-        return result
-    
-    # Fallback to Gaussian elimination (may not be optimal but gives an answer)
-    return solve_joltage(joltages, buttons)
+    # Fonction objectif : minimiser le nombre total de pressions
+    probleme += lpSum(pressions)
 
+    # Contraintes : pour chaque compteur, la somme des pressions des boutons
+    # qui l'affectent doit être égale à son joltage cible
+    for i_compteur in range(nb_compteurs):
+        if i_compteur < len(joltages):
+            boutons_affectes = [
+                pressions[i_bouton] 
+                for i_bouton, bouton in enumerate(boutons) 
+                if i_compteur in bouton
+            ]
+            if boutons_affectes:
+                probleme += lpSum(boutons_affectes) == joltages[i_compteur]
 
-def solve_lights_bruteforce(target, buttons):
-    """
-    Brute force solution for small cases.
-    Try all combinations of button presses (each 0 or 1 times).
-    """
-    n_lights = len(target)
-    n_buttons = len(buttons)
-    
-    min_presses = float('inf')
-    
-    # Try all 2^n_buttons combinations
-    for mask in range(1 << n_buttons):
-        lights = [0] * n_lights
-        presses = 0
-        
-        for button_idx in range(n_buttons):
-            if mask & (1 << button_idx):
-                presses += 1
-                for light_idx in buttons[button_idx]:
-                    lights[light_idx] ^= 1
-        
-        if lights == target:
-            min_presses = min(min_presses, presses)
-    
-    return min_presses if min_presses != float('inf') else None
+    # Résoudre avec un timeout pour éviter les boucles infinies
+    solveur = PULP_CBC_CMD(msg=0, timeLimit=timeout)
+    statut = probleme.solve(solveur)
 
+    if statut != 1:  # 1 = Optimal
+        return None
 
-def main():
-    # Test with examples
-    examples = [
-        "[.##.] (3) (1,3) (2) (2,3) (0,2) (0,1) {3,5,4,7}",
-        "[...#.] (0,2,3,4) (2,3) (0,4) (0,1,2) (1,2,3,4) {7,5,12,7,2}",
-        "[.###.#] (0,1,2,3,4) (0,3,4) (0,1,2,4,5) (1,2) {10,11,11,5,10,5}"
-    ]
-    
-    print("Testing Part 1 with examples:")
-    total_test = 0
-    for i, example in enumerate(examples, 1):
-        target, buttons, _ = parse_machine(example)
-        result = solve_lights_bruteforce(target, buttons)
-        print(f"Machine {i}: {result} presses")
-        total_test += result
-    
-    print(f"Total test presses (Part 1): {total_test}")
-    print(f"Expected: 7 (2 + 3 + 2)")
-    print()
-    
-    print("Testing Part 2 with examples:")
-    total_test_p2 = 0
-    for i, example in enumerate(examples, 1):
-        _, buttons, joltages = parse_machine(example)
-        result = solve_joltage_bfs(joltages, buttons)
-        if result is None:
-            print(f"Machine {i}: FAILED")
-            continue
-        print(f"Machine {i}: {result} presses")
-        total_test_p2 += result
-    
-    print(f"Total test presses (Part 2): {total_test_p2}")
-    print(f"Expected: 33 (10 + 12 + 11)")
-    print()
-    
-    # Solve actual puzzle
+    return int(sum(var.value() for var in pressions))
+
+def main() -> None:
+    """Fonction principale."""
+    import sys
+    from pathlib import Path
+
+    # Vérifier les arguments en ligne de commande
+    if len(sys.argv) != 2:
+        print(f"Utilisation: {sys.argv[0]} <fichier_entree>", file=sys.stderr)
+        sys.exit(1)
+
+    fichier_entree = Path(sys.argv[1])
+    if not fichier_entree.exists():
+        print(f"Erreur: Le fichier {fichier_entree} n'existe pas.", file=sys.stderr)
+        sys.exit(1)
+
     try:
-        with open('input_day10.txt', 'r') as f:
-            lines = f.readlines()
-        
-        # Part 1
-        total_presses_p1 = 0
-        machines_solved = 0
-        
-        for i, line in enumerate(lines, 1):
-            line = line.strip()
-            if not line:
-                continue
-            
-            target, buttons, _ = parse_machine(line)
-            result = solve_lights_bruteforce(target, buttons)
-            
-            if result is not None:
-                total_presses_p1 += result
-                machines_solved += 1
-        
-        print(f"Part 1: Solved {machines_solved} machines")
-        print(f"Part 1 Answer: {total_presses_p1}")
-        print()
-        
-        # Part 2
-        total_presses_p2 = 0
-        machines_solved_p2 = 0
-        
-        for i, line in enumerate(lines, 1):
-            line = line.strip()
-            if not line:
-                continue
-            
-            _, buttons, joltages = parse_machine(line)
-            result = solve_joltage_hybrid(joltages, buttons)
-            
-            if result is not None:
-                total_presses_p2 += result
-                machines_solved_p2 += 1
-            else:
-                print(f"Warning: Machine {i} (Part 2) has no solution!")
-        
-        print(f"Part 2: Solved {machines_solved_p2} machines")
-        print(f"Part 2 Answer: {total_presses_p2}")
-    
-    except FileNotFoundError:
-        print("input_day10.txt not found. Please download your puzzle input.")
+        # Lire les lignes du fichier d'entrée
+        with open(fichier_entree, 'r', encoding='utf-8') as f:
+            lignes = [ligne.strip() for ligne in f if ligne.strip()]
 
+        # Partie 1: Résoudre pour les lumières
+        total_pressions_p1 = 0
+        machines_resolues_p1 = 0
+
+        for i, ligne in enumerate(lignes, 1):
+            cible, boutons, _ = analyser_machine(ligne)
+            resultat = resoudre_lumieres_brute_force(cible, boutons)
+            
+            if resultat is not None:
+                total_pressions_p1 += resultat
+                machines_resolues_p1 += 1
+            else:
+                print(f"Attention: Machine {i} n'a pas de solution pour la partie 1")
+
+        print(f"Partie 1: {machines_resolues_p1} machines résolues, total des pressions = {total_pressions_p1}")
+
+        # Partie 2: Résoudre pour les joltages
+        total_pressions_p2 = 0
+        machines_resolues_p2 = 0
+
+        for i, ligne in enumerate(lignes, 1):
+            _, boutons, joltages = analyser_machine(ligne)
+            resultat = resoudre_joltage_ilp(joltages, boutons)
+            
+            if resultat is not None:
+                total_pressions_p2 += resultat
+                machines_resolues_p2 += 1
+            else:
+                print(f"Attention: Machine {i} n'a pas de solution pour la partie 2")
+
+        print(f"Partie 2: {machines_resolues_p2} machines résolues, total des pressions = {total_pressions_p2}")
+
+    except Exception as e:
+        print(f"Erreur lors du traitement: {e}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

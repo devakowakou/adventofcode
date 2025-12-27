@@ -1,40 +1,87 @@
-def is_invalid_id(num):
-    """
-    Check if a number is invalid (made of some sequence repeated twice).
-    Examples: 55 (5 twice), 6464 (64 twice), 123123 (123 twice)
+from typing import List, Tuple
+
+def is_invalid_id(num: int) -> bool:
+    """Vérifie si un nombre est invalide (séquence répétée deux fois).
+    
+    Un nombre est invalide si :
+    - Il a un nombre pair de chiffres
+    - La première moitié est identique à la seconde
+    - La première moitié ne commence pas par zéro
+    
+    Args:
+        num: Le nombre à vérifier
+        
+    Returns:
+        bool: True si le nombre est invalide, False sinon
     """
     num_str = str(num)
-    length = len(num_str)
-    if length % 2 != 0:
+    if len(num_str) % 2 != 0:
         return False
-    mid = length // 2
-    first_half = num_str[:mid]
-    second_half = num_str[mid:]
-    if first_half[0] == '0':
-        return False
+        
+    half = len(num_str) // 2
+    first_half = num_str[:half]
+    return first_half[0] != '0' and first_half == num_str[half:]
+
+
+def parse_ranges(ranges_input: str) -> List[Tuple[int, int]]:
+    """Parse les plages de nombres depuis une chaîne.
     
-    return first_half == second_half
-
-
-def solve():
-    with open('input.txt', 'r') as f:
-        ranges_input = f.read().strip()
+    Format attendu : "début-fin,début-fin,..."
+    
+    Args:
+        ranges_input: Chaîne contenant les plages à parser
+        
+    Returns:
+        Liste de tuples (début, fin) pour chaque plage
+    """
     ranges = []
-    for range_str in ranges_input.split(','):
-        range_str = range_str.strip()
-        if range_str:
-            start, end = map(int, range_str.split('-'))
+    for range_str in (r.strip() for r in ranges_input.split(',') if r.strip()):
+        try:
+            start, end = map(int, range_str.split('-', 1))
+            if start > end:
+                start, end = end, start
             ranges.append((start, end))
-    total_sum = 0
+        except (ValueError, IndexError) as e:
+            raise ValueError(f"Format de plage invalide: {range_str}") from e
+    return ranges
+
+
+def solve() -> int:
+    """Résout le problème du jour 3.
     
-    for start, end in ranges:
-        for num in range(start, end + 1):
-            if is_invalid_id(num):
-                total_sum += num
-    
-    return total_sum
+    Returns:
+        La somme des IDs invalides dans les plages spécifiées
+        
+    Raises:
+        FileNotFoundError: Si le fichier input.txt n'existe pas
+        ValueError: Si le format du fichier est incorrect
+    """
+    try:
+        with open('input.txt', 'r') as f:
+            ranges_input = f.read().strip()
+            
+        ranges = parse_ranges(ranges_input)
+        if not ranges:
+            print("Aucune plage valide trouvée.")
+            return 0
+            
+        return sum(
+            num
+            for start, end in ranges
+            for num in range(start, end + 1)
+            if is_invalid_id(num)
+        )
+        
+    except FileNotFoundError:
+        raise FileNotFoundError("Erreur: Fichier 'input.txt' introuvable.")
+    except Exception as e:
+        raise ValueError(f"Erreur lors du traitement: {str(e)}") from e
 
 
 if __name__ == "__main__":
-    result = solve()
-    print(f"Sum of all invalid IDs: {result}")
+    try:
+        result = solve()
+        print(f"Somme des IDs invalides: {result}")
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Erreur: {str(e)}")
+        exit(1)

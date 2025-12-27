@@ -1,49 +1,60 @@
-def parse_input(filename):
-    """Parse the red tile coordinates from the input file."""
-    tiles = []
-    with open(filename, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                x, y = map(int, line.split(','))
-                tiles.append((x, y))
-    return tiles
+from typing import List, Tuple, Set, Dict, Optional
+from dataclasses import dataclass
+import sys
+from functools import lru_cache
 
+@dataclass(frozen=True, order=True)
+class Point:
+    """Représente un point 2D avec des coordonnées entières."""
+    x: int
+    y: int
 
-def get_green_tiles(red_tiles):
-    """
-    Build the set of all green tiles on the path between red tiles.
-    Return path tiles and a cached function to check if a point is green (path or interior).
-    """
-    green_path = set()
-    n = len(red_tiles)
+class RectangleFinder:
+    """Classe pour trouver le plus grand rectangle dans une grille de points."""
     
-    # Add path tiles between consecutive red tiles
-    for i in range(n):
-        x1, y1 = red_tiles[i]
-        x2, y2 = red_tiles[(i + 1) % n]  # Wraps around
+    def __init__(self, red_tiles: List[Tuple[int, int]]):
+        """Initialise le finder avec les tuiles rouges.
         
-        # Add tiles along the path (either horizontal or vertical line)
-        if x1 == x2:  # Vertical line
-            for y in range(min(y1, y2), max(y1, y2) + 1):
-                green_path.add((x1, y))
-        else:  # Horizontal line
-            for x in range(min(x1, x2), max(x1, x2) + 1):
-                green_path.add((x, y1))
+        Args:
+            red_tiles: Liste des coordonnées (x, y) des tuiles rouges
+        """
+        self.red_tiles = [Point(x, y) for x, y in red_tiles]
+        self.red_set = set(self.red_tiles)
+        self.green_path: Set[Point] = set()
+        self._build_green_path()
+        self._interior_cache: Dict[Point, bool] = {}
     
-    # Cache for interior point checks
-    interior_cache = {}
+    def _build_green_path(self) -> None:
+        """Construit le chemin vert entre les tuiles rouges consécutives."""
+        n = len(self.red_tiles)
+        for i in range(n):
+            p1 = self.red_tiles[i]
+            p2 = self.red_tiles[(i + 1) % n]  # Connexion circulaire
+            
+            # Ajout des points entre p1 et p2 (inclus)
+            if p1.x == p2.x:  # Ligne verticale
+                y_min, y_max = sorted((p1.y, p2.y))
+                for y in range(y_min, y_max + 1):
+                    self.green_path.add(Point(p1.x, y))
+            else:  # Ligne horizontale
+                x_min, x_max = sorted((p1.x, p2.x))
+                for x in range(x_min, x_max + 1):
+                    self.green_path.add(Point(x, p1.y))
     
-    def is_inside_polygon(point, polygon):
-        """Ray casting algorithm for point in polygon test (improved)."""
-        x, y = point
-        n = len(polygon)
+    @lru_cache(maxsize=None)
+    def _is_inside_polygon(self, point: Point) -> bool:
+        """Vérifie si un point est à l'intérieur du polygone formé par les tuiles rouges.
+        
+        Utilise l'algorithme du ray casting.
+        """
+        x, y = point.x, point.y
+        n = len(self.red_tiles)
         inside = False
         
         j = n - 1
         for i in range(n):
-            xi, yi = polygon[i]
-            xj, yj = polygon[j]
+            xi, yi = self.red_tiles[i].x, self.red_tiles[i].y
+            xj, yj = self.red_tiles[j].x, self.red_tiles[j].y
             
             if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
                 inside = not inside
@@ -51,174 +62,148 @@ def get_green_tiles(red_tiles):
         
         return inside
     
-    def is_green(point):
-        """Check if a point is green (on path or interior) with caching."""
-        if point in green_path:
+    def is_green(self, point: Point) -> bool:
+        """Vérifie si un point est vert (sur le chemin ou à l'intérieur)."""
+        if point in self.green_path:
             return True
-        if point in interior_cache:
-            return interior_cache[point]
-        result = is_inside_polygon(point, red_tiles)
-        interior_cache[point] = result
+        if point in self._interior_cache:
+            return self._interior_cache[point]
+        
+        result = self._is_inside_polygon(point)
+        self._interior_cache[point] = result
         return result
     
-    return green_path, is_green
-
-
-def find_largest_rectangle(tiles):
-    """
-    Find the largest rectangle that can be formed by any two red tiles
-    as opposite corners. The area is inclusive of both corners.
-    """
-    n = len(tiles)
-    max_area = 0
-    best_pair = None
-    
-    # Check all pairs of tiles
-    for i in range(n):
-        for j in range(i + 1, n):
-            x1, y1 = tiles[i]
-            x2, y2 = tiles[j]
-            
-            # Calculate rectangle area (inclusive of both corners)
-            width = abs(x2 - x1) + 1
-            height = abs(y2 - y1) + 1
-            area = width * height
-            
-            if area > max_area:
+    def find_largest_rectangle(self) -> Tuple[int, Optional[Tuple[Point, Point]]]:
+        """Trouve le plus grand rectangle formé par deux tuiles rouges.
+        
+        Returns:
+            Un tuple (aire, ((x1, y1), (x2, y2))) représentant l'aire et les coins du rectangle,
+            ou (0, None) si aucun rectangle valide n'est trouvé.
+        """
+        n = len(self.red_tiles)
+        max_area = 0
+        best_pair = None
+        
+        # Génère toutes les paires de points
+        for i in range(n):
+            p1 = self.red_tiles[i]
+            for j in range(i + 1, n):
+                p2 = self.red_tiles[j]
+                
+                # Calcule les coins du rectangle
+                min_x = min(p1.x, p2.x)
+                max_x = max(p1.x, p2.x)
+                min_y = min(p1.y, p2.y)
+                max_y = max(p1.y, p2.y)
+                
+                # Calcule l'aire
+                width = max_x - min_x + 1
+                height = max_y - min_y + 1
+                area = width * height
+                
+                # Passe à la suite si l'aire est trop petite
+                if area <= max_area:
+                    continue
+                
+                # Vérifie les bords du rectangle
+                if not self._is_rectangle_valid(min_x, max_x, min_y, max_y):
+                    continue
+                
+                # Met à jour le meilleur rectangle trouvé
                 max_area = area
-                best_pair = (tiles[i], tiles[j])
-    
-    return max_area, best_pair
-
-
-def find_largest_rectangle_part2(red_tiles, green_path, is_green):
-    """
-    Find the largest rectangle using only red and green tiles.
-    Check borders completely + sample interior strategically.
-    """
-    red_set = set(red_tiles)
-    
-    n = len(red_tiles)
-    max_area = 0
-    best_pair = None
-    
-    # Sort pairs by area (descending) to find large ones first
-    pairs_with_area = []
-    for i in range(n):
-        for j in range(i + 1, n):
-            x1, y1 = red_tiles[i]
-            x2, y2 = red_tiles[j]
-            area = (abs(x2 - x1) + 1) * (abs(y2 - y1) + 1)
-            pairs_with_area.append((area, i, j))
-    
-    # Sort by area descending
-    pairs_with_area.sort(reverse=True)
-    
-    print(f"Checking {len(pairs_with_area)} potential rectangles...")
-    
-    # Check pairs starting from largest
-    for idx, (area, i, j) in enumerate(pairs_with_area):
-        # Skip if this can't beat current max
-        if area <= max_area:
-            print(f"Stopping early at pair {idx}, remaining pairs too small")
-            break
+                best_pair = (p1, p2)
         
-        if idx % 1000 == 0:
-            print(f"Checked {idx} pairs, current max: {max_area}")
+        return max_area, best_pair
+    
+    def _is_rectangle_valid(self, min_x: int, max_x: int, min_y: int, max_y: int) -> bool:
+        """Vérifie si tous les points du rectangle sont valides (rouges ou verts)."""
+        # Vérifie les bords supérieur et inférieur
+        for x in range(min_x, max_x + 1):
+            p1 = Point(x, min_y)
+            p2 = Point(x, max_y)
+            if p1 not in self.red_set and not self.is_green(p1):
+                return False
+            if p2 not in self.red_set and not self.is_green(p2):
+                return False
         
-        x1, y1 = red_tiles[i]
-        x2, y2 = red_tiles[j]
+        # Vérifie les bords gauche et droit (sans les coins déjà vérifiés)
+        for y in range(min_y + 1, max_y):
+            p1 = Point(min_x, y)
+            p2 = Point(max_x, y)
+            if p1 not in self.red_set and not self.is_green(p1):
+                return False
+            if p2 not in self.red_set and not self.is_green(p2):
+                return False
         
-        min_x, max_x = min(x1, x2), max(x1, x2)
-        min_y, max_y = min(y1, y2), max(y1, y2)
-        
+        # Pour les grands rectangles, on échantillonne l'intérieur
         width = max_x - min_x + 1
         height = max_y - min_y + 1
         
-        # Strategy: Check borders first (fast reject), then sample interior
-        valid = True
+        if width * height > 10000:  # Seuil pour l'échantillonnage
+            step = max(1, int((width * height) ** 0.25))
+            for x in range(min_x + 1, max_x, step):
+                for y in range(min_y + 1, max_y, step):
+                    p = Point(x, y)
+                    if p not in self.red_set and not self.is_green(p):
+                        return False
         
-        # Check ALL border points
-        # Top and bottom edges
-        for x in range(min_x, max_x + 1):
-            if (x, min_y) not in red_set and not is_green((x, min_y)):
-                valid = False
-                break
-            if (x, max_y) not in red_set and not is_green((x, max_y)):
-                valid = False
-                break
-        
-        # Left and right edges (excluding corners)
-        if valid:
-            for y in range(min_y + 1, max_y):
-                if (min_x, y) not in red_set and not is_green((min_x, y)):
-                    valid = False
-                    break
-                if (max_x, y) not in red_set and not is_green((max_x, y)):
-                    valid = False
-                    break
-        
-        # Check interior points with adaptive sampling
-        if valid:
-            # For small rectangles, check everything
-            if width * height <= 50000:
-                for x in range(min_x + 1, max_x):
-                    for y in range(min_y + 1, max_y):
-                        if (x, y) not in red_set and not is_green((x, y)):
-                            valid = False
-                            break
-                    if not valid:
-                        break
-            else:
-                # For large rectangles, sample interior points in a grid
-                # Use ~200 sample points
-                sample_size = min(200, width * height // 1000)
-                step_x = max(1, width // int(sample_size ** 0.5))
-                step_y = max(1, height // int(sample_size ** 0.5))
-                
-                for x in range(min_x + 1, max_x, step_x):
-                    for y in range(min_y + 1, max_y, step_y):
-                        if (x, y) not in red_set and not is_green((x, y)):
-                            valid = False
-                            break
-                    if not valid:
-                        break
-        
-        if valid:
-            max_area = area
-            best_pair = (red_tiles[i], red_tiles[j])
-            print(f"Found valid rectangle with area {max_area}: {best_pair}")
-    
-    return max_area, best_pair
+        return True
 
+def parse_input(filename: str) -> List[Tuple[int, int]]:
+    """Lit le fichier d'entrée et retourne les coordonnées des tuiles rouges.
+    
+    Args:
+        filename: Chemin vers le fichier d'entrée
+        
+    Returns:
+        Liste des coordonnées (x, y) des tuiles rouges
+    """
+    try:
+        with open(filename, 'r') as f:
+            return [tuple(map(int, line.strip().split(','))) 
+                   for line in f if line.strip()]
+    except FileNotFoundError:
+        print(f"Erreur: Le fichier {filename} est introuvable.", file=sys.stderr)
+        sys.exit(1)
+    except ValueError as e:
+        print(f"Erreur de format dans le fichier {filename}: {e}", file=sys.stderr)
+        sys.exit(1)
 
-def main():
-    red_tiles = parse_input('input_day9.txt')
-    print(f"Part 1:")
-    print(f"Total red tiles: {len(red_tiles)}")
+def main() -> None:
+    """Fonction principale."""
+    if len(sys.argv) != 2:
+        print(f"Utilisation: {sys.argv[0]} <fichier_entrée>", file=sys.stderr)
+        sys.exit(1)
     
-    max_area, best_pair = find_largest_rectangle(red_tiles)
+    filename = sys.argv[1]
     
-    if best_pair:
-        print(f"Largest rectangle area: {max_area}")
-        print(f"Corners: {best_pair[0]} and {best_pair[1]}")
-    
-    print(f"Part 1 Answer: {max_area}")
-    
-    # Part 2
-    print(f"\nPart 2:")
-    print("Building green tiles...")
-    green_path, is_green = get_green_tiles(red_tiles)
-    print(f"Green path tiles: {len(green_path)}")
-    
-    max_area2, best_pair2 = find_largest_rectangle_part2(red_tiles, green_path, is_green)
-    
-    if best_pair2:
-        print(f"Largest rectangle area (red/green only): {max_area2}")
-        print(f"Corners: {best_pair2[0]} and {best_pair2[1]}")
-    
-    print(f"Part 2 Answer: {max_area2}")
-
+    try:
+        # Lecture des données d'entrée
+        red_tiles = parse_input(filename)
+        print(f"Nombre de tuiles rouges: {len(red_tiles)}")
+        
+        if len(red_tiles) < 3:
+            print("Erreur: Au moins 3 tuiles rouges sont nécessaires pour former un polygone.", 
+                  file=sys.stderr)
+            sys.exit(1)
+        
+        # Création du finder et recherche du plus grand rectangle
+        finder = RectangleFinder(red_tiles)
+        max_area, best_pair = finder.find_largest_rectangle()
+        
+        # Affichage des résultats
+        if best_pair:
+            p1, p2 = best_pair
+            print(f"\nPlus grand rectangle trouvé:")
+            print(f"  Coin 1: ({p1.x}, {p1.y})")
+            print(f"  Coin 2: ({p2.x}, {p2.y})")
+            print(f"  Aire: {max_area}")
+        else:
+            print("\nAucun rectangle valide n'a été trouvé.")
+            
+    except Exception as e:
+        print(f"Erreur: {e}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

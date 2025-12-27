@@ -1,109 +1,154 @@
-def parse_input(filename):
-    """
-    Parse the input file into fresh ranges and available ingredient IDs.
-    Returns: (list of tuples for ranges, list of ingredient IDs)
-    """
-    with open(filename, 'r') as f:
-        lines = [line.strip() for line in f.readlines()]
-    
-    # Find the blank line that separates ranges from IDs
-    blank_line_idx = lines.index('')
-    
-    # Parse ranges
-    ranges = []
-    for line in lines[:blank_line_idx]:
-        if line:
-            start, end = line.split('-')
-            ranges.append((int(start), int(end)))
-    
-    # Parse available ingredient IDs
-    ingredient_ids = []
-    for line in lines[blank_line_idx + 1:]:
-        if line:
-            ingredient_ids.append(int(line))
-    
-    return ranges, ingredient_ids
+from typing import List, Tuple
+from dataclasses import dataclass
+import sys
 
+@dataclass(frozen=True)
+class Range:
+    """Représente une plage de numéros d'ingrédients frais."""
+    start: int
+    end: int
 
-def is_fresh(ingredient_id, ranges):
-    """
-    Check if an ingredient ID is fresh (falls within any range).
-    """
-    for start, end in ranges:
-        if start <= ingredient_id <= end:
-            return True
-    return False
+    def __lt__(self, other: 'Range') -> bool:
+        """Permet de trier les plages par ordre croissant."""
+        return (self.start, self.end) < (other.start, other.end)
 
+    def contains(self, value: int) -> bool:
+        """Vérifie si une valeur est dans la plage."""
+        return self.start <= value <= self.end
 
-def solve_part1(ranges, ingredient_ids):
-    """
-    Count how many of the available ingredient IDs are fresh.
-    """
-    fresh_count = 0
+    def overlaps(self, other: 'Range') -> bool:
+        """Vérifie si cette plage chevauche une autre plage."""
+        return (self.start <= other.end + 1 and 
+                other.start <= self.end + 1)
+
+    def merge(self, other: 'Range') -> 'Range':
+        """Fusionne cette plage avec une autre plage qui la chevauche."""
+        return Range(
+            min(self.start, other.start),
+            max(self.end, other.end)
+        )
+
+def parse_input(filename: str) -> Tuple[List[Range], List[int]]:
+    """Parse le fichier d'entrée en plages et identifiants d'ingrédients.
     
-    for ingredient_id in ingredient_ids:
-        if is_fresh(ingredient_id, ranges):
-            fresh_count += 1
-    
-    return fresh_count
-
-
-def merge_ranges(ranges):
+    Args:
+        filename: Chemin vers le fichier d'entrée
+        
+    Returns:
+        Tuple contenant:
+        - Liste des plages d'ingrédients frais
+        - Liste des identifiants d'ingrédients à vérifier
     """
-    Merge overlapping ranges and return a list of non-overlapping ranges.
+    try:
+        with open(filename, 'r') as f:
+            lines = [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        print(f"Erreur: Le fichier {filename} est introuvable.", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        # Séparation des plages et des IDs
+        separator = lines.index('')
+        range_lines = lines[:separator]
+        id_lines = lines[separator + 1:]
+        
+        # Parsing des plages
+        ranges = []
+        for line in range_lines:
+            start, end = map(int, line.split('-', 1))
+            ranges.append(Range(start, end))
+            
+        # Parsing des IDs
+        ingredient_ids = [int(id_str) for id_str in id_lines]
+        
+        return ranges, ingredient_ids
+        
+    except (ValueError, IndexError) as e:
+        print(f"Erreur de format dans le fichier {filename}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def merge_ranges(ranges: List[Range]) -> List[Range]:
+    """Fusionne les plages qui se chevauchent ou se touchent.
+    
+    Args:
+        ranges: Liste de plages à fusionner
+        
+    Returns:
+        Liste des plages fusionnées
     """
     if not ranges:
         return []
-    
-    # Sort ranges by start position
+        
+    # Tri des plages par ordre croissant
     sorted_ranges = sorted(ranges)
     merged = [sorted_ranges[0]]
     
-    for current_start, current_end in sorted_ranges[1:]:
-        last_start, last_end = merged[-1]
-        
-        # Check if current range overlaps with the last merged range
-        # Ranges overlap if current_start <= last_end + 1
-        if current_start <= last_end + 1:
-            # Merge by extending the end if necessary
-            merged[-1] = (last_start, max(last_end, current_end))
+    for current in sorted_ranges[1:]:
+        last = merged[-1]
+        if last.overlaps(current):
+            merged[-1] = last.merge(current)
         else:
-            # No overlap, add as new range
-            merged.append((current_start, current_end))
+            merged.append(current)
     
     return merged
 
-
-def solve_part2(ranges):
+def count_fresh_ingredients(ranges: List[Range], ingredient_ids: List[int]) -> int:
+    """Compte le nombre d'ingrédients frais.
+    
+    Args:
+        ranges: Plages d'ingrédients frais
+        ingredient_ids: Liste des identifiants à vérifier
+        
+    Returns:
+        Nombre d'ingrédients frais
     """
-    Count total unique ingredient IDs considered fresh by the ranges.
+    # Optimisation: création d'un set pour des recherches rapides
+    fresh_ranges = merge_ranges(ranges)
+    
+    def is_fresh(ingredient_id: int) -> bool:
+        """Vérifie si un ingrédient est frais."""
+        # Recherche binaire serait plus efficace pour beaucoup de plages
+        return any(r.contains(ingredient_id) for r in fresh_ranges)
+    
+    return sum(1 for ingredient_id in ingredient_ids if is_fresh(ingredient_id))
+
+def count_total_fresh_ids(ranges: List[Range]) -> int:
+    """Compte le nombre total d'IDs d'ingrédients frais uniques.
+    
+    Args:
+        ranges: Plages d'ingrédients frais
+        
+    Returns:
+        Nombre total d'IDs uniques dans les plages
     """
-    # Merge overlapping ranges first
-    merged = merge_ranges(ranges)
-    
-    # Count total IDs in all merged ranges
-    total_count = 0
-    for start, end in merged:
-        total_count += (end - start + 1)
-    
-    return total_count
+    return sum(r.end - r.start + 1 for r in merge_ranges(ranges))
 
-
-def main():
-    # Parse input
-    ranges, ingredient_ids = parse_input('input_day5.txt')
+def main() -> None:
+    """Fonction principale."""
+    if len(sys.argv) != 2:
+        print(f"Utilisation: {sys.argv[0]} <fichier_entree>", file=sys.stderr)
+        sys.exit(1)
+        
+    filename = sys.argv[1]
     
-    print(f"Found {len(ranges)} fresh ingredient ranges")
-    print(f"Found {len(ingredient_ids)} available ingredient IDs to check")
-    
-    # Part 1: Count fresh ingredients
-    result_part1 = solve_part1(ranges, ingredient_ids)
-    print(f"\nPart 1 - Number of fresh ingredient IDs: {result_part1}")
-    
-    # Part 2: Count all unique IDs in fresh ranges
-    result_part2 = solve_part2(ranges)
-    print(f"Part 2 - Total ingredient IDs considered fresh: {result_part2}")
-
+    try:
+        # Lecture et analyse de l'entrée
+        ranges, ingredient_ids = parse_input(filename)
+        
+        print(f"Plages d'ingrédients frais: {len(ranges)}")
+        print(f"Nombre d'ingrédients à vérifier: {len(ingredient_ids)}")
+        
+        # Partie 1: Nombre d'ingrédients frais
+        fresh_count = count_fresh_ingredients(ranges, ingredient_ids)
+        print(f"\nPartie 1 - Ingrédients frais: {fresh_count}")
+        
+        # Partie 2: Nombre total d'IDs frais uniques
+        total_fresh = count_total_fresh_ids(ranges)
+        print(f"Partie 2 - Total des IDs frais uniques: {total_fresh}")
+        
+    except Exception as e:
+        print(f"Erreur: {e}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
