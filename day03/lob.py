@@ -4,7 +4,6 @@ from pathlib import Path
 def max_two_digit_from_line(s):
     max_seen = -1
     best = -1
-    # parcourir de droite à gauche
     for i in range(len(s)-1, -1, -1):
         d = ord(s[i]) - 48
         if max_seen != -1:
@@ -16,7 +15,7 @@ def max_two_digit_from_line(s):
     return best if best >= 0 else 0
 
 def main():
-    p = Path("input.txt")  # ou chemin vers ton fichier
+    p = Path("input.txt")  
     if not p.exists():
         print("input.txt introuvable dans le dossier courant.")
         return
@@ -31,7 +30,6 @@ def main():
     print("Banques (lignes) :", len(lines))
     print("Somme totale des meilleurs jolts :", total)
 
-    # Optionnel : sauvegarder les résultats détaillés
     out = Path("aoc_day3_result.txt")
     with out.open("w", encoding="utf-8") as f:
         f.write(f"total={total}\n")
